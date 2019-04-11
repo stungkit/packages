@@ -1,6 +1,6 @@
 import { ContentfulClientApi, createClient, CreateClientParams, Entry, EntryCollection } from 'contentful';
+import { documentToHtmlString } from '@contentful/rich-text-html-renderer';
 import { Request, Response } from 'express';
-import * as _ from 'lodash';
 
 export interface IContentfulMiddlewareOptions extends CreateClientParams {
   space: string;
@@ -50,30 +50,35 @@ export const ContentfulMiddleware = (options: IContentfulMiddlewareOptions) => {
 
     return item[options.defaultLocale];
   };
-  const getProperties = (item: Entry<any>, locale: string) => {
-    const properties: any = {};
+  const getProperties = (fields: any, locale: string = options.defaultLocale, result: any = {}) => {
+    Object.keys(fields).map((key) => {
+      if (fields[key].hasOwnProperty(locale)) {
+        const item = fields[key][locale];
+        let property: any;
 
-    Object.keys(item.fields).forEach((key: string) => {
-      const value: any | any[] = getLocaleValue(item.fields[key], locale);
+        if (typeof item !== 'object') {
+          property = result[key] = item;
+        } else if (item.hasOwnProperty('fields')) {
+          property = result[key] = getProperties(item.fields, locale);
+        } else if (item.hasOwnProperty('nodeType') && item.nodeType === 'document') {
+          property = result[key] = documentToHtmlString(item);
+        } else if (Array.isArray(item)) {
+          property = result[key] = item.map((e) => getProperties(e, locale));
+        } else {
+          property = result[key] = item;
+        }
 
-      if (_.isArray(value)) {
-        properties[key] = value.map((entry: Entry<any>) => {
-          const prop: any = {};
-
-          Object.keys(entry.fields).forEach((k: string) => {
-            prop[k] = getLocaleValue(entry.fields[k], locale);
-          });
-
-          return prop;
-        });
-      } else {
-        properties[key] = value;
+        return property;
       }
     });
 
-    return properties;
+    return result;
   };
   const transformContentfulPageToVue = (page: Entry<any>, locale: string): IContentfulPage => {
+    if (!page) {
+      return null;
+    }
+
     return {
       slug: getLocaleValue(page.fields.slug, locale),
       title: getLocaleValue(page.fields.title, locale),
@@ -81,7 +86,7 @@ export const ContentfulMiddleware = (options: IContentfulMiddlewareOptions) => {
       contentItems: getLocaleValue(page.fields.contentItems, locale).map((item: Entry<any>) => {
         return {
           component: item.sys.contentType.sys.id,
-          properties: getProperties(item, locale),
+          properties: getProperties(item.fields, locale),
         };
       }),
     };
@@ -91,9 +96,16 @@ export const ContentfulMiddleware = (options: IContentfulMiddlewareOptions) => {
     const slug: string = req.query.slug || '/';
     const locale: string = req.query.locale;
     const entry: Entry<any> = entries.find((p: Entry<any>) => getLocaleValue(p.fields.slug, locale) === slug);
+    let page: IContentfulPage;
 
-    if (entry) {
-      res.status(200).json(transformContentfulPageToVue(entry, locale));
+    try {
+      page = transformContentfulPageToVue(entry, locale);
+    } catch (e) {
+      page = null;
+    }
+
+    if (page) {
+      res.status(200).json(page);
     } else {
       res.status(404).json({ message: 'not found' });
     }

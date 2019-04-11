@@ -1,4 +1,4 @@
-import { Command, ICommandHandler } from '../lib/command';
+import { Command, ICommandHandler, IRunOptions } from '../lib/command';
 import { Spinner } from '../utils/ui';
 import { runtimeRoot } from '../utils/path';
 import { handleProcessError, runProcess } from '../utils/process';
@@ -9,21 +9,21 @@ const download = require('download-git-repo');
 @Command({
   name: 'create',
   alias: 'c',
-  description: 'Create a new vue-starter project.',
+  description: 'Create a new vuesion project.',
   arguments: [{ name: 'name', defaultValue: 'my-app' }],
   options: [{ flags: '-n, --next', description: 'Download latest version.' }],
 })
 export class Create implements ICommandHandler {
   public name: string;
-  public next: string;
+  public next: boolean;
 
-  public async run(args: string[], silent: boolean) {
+  public async run(args: string[], options: IRunOptions) {
     const destination = runtimeRoot(this.name);
-    const branch = this.next ? 'github:devCrossNet/vue-starter#next' : 'github:devCrossNet/vue-starter';
+    const branch = this.next ? 'github:vuesion/vuesion#next' : 'github:vuesion/vuesion';
     const spinner = new Spinner();
 
     spinner.message = 'Downloading project...';
-    spinner.start();
+    spinner.start(options.debug);
 
     download(branch, destination, async (e: any) => {
       if (e) {
@@ -33,7 +33,7 @@ export class Create implements ICommandHandler {
       spinner.message = 'Installing dependencies...';
 
       try {
-        await runProcess('npm', ['install'], { cwd: destination, silent: true });
+        await runProcess('npm', ['install'], { cwd: destination, silent: true, ...options });
 
         spinner.message = `Project ${chalk.bold(this.name)} successfully created`;
         spinner.stop();
